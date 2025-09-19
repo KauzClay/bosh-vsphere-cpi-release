@@ -136,6 +136,7 @@ describe 'CPI', nsxt_all: true do
   end
 
   class SegmentPortsAreNotInitialized < StandardError; end
+  class StillUpdatingSegmentPorts < StandardError; end
   class StillUpdatingVMsInGroups < StandardError; end
   class NameAndID
     attr_reader :name, :id
@@ -880,6 +881,7 @@ describe 'CPI', nsxt_all: true do
 
       context "and the ports are connected to a policy-api created segment/network switch" do
         let(:network_spec) { policy_network_spec }
+
         it "can successfully set metadata + remove" do
           vm_type = {
             'ram' => 512,
@@ -945,6 +947,7 @@ describe 'CPI', nsxt_all: true do
             })
 
             verify_ports(vm_id) do |logical_port|
+              raise StillUpdatingSegmentPorts if logical_port.tags.length < 3
               expect(logical_port.tags).to include(
                   an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
                   an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
@@ -955,6 +958,7 @@ describe 'CPI', nsxt_all: true do
             verify_policy_ports([segment_1, segment_2]) do |ports|
               expect(ports.length).to eq(1)
               ports.each do |port|
+                raise StillUpdatingSegmentPorts if port.tags.length < 3
                 expect(port.tags).to include(
                   an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
                   an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
@@ -1017,6 +1021,7 @@ describe 'CPI', nsxt_all: true do
             })
 
             verify_ports(vm_id) do |logical_port|
+              raise StillUpdatingSegmentPorts if logical_port.tags.length < 1
               expect(logical_port.tags).to contain_exactly(
                 an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
               )
@@ -1041,11 +1046,11 @@ describe 'CPI', nsxt_all: true do
         }))
       end
 
-      let(:cpi) { policy_cpi } #the cpi variable is used to cleanup created VMs.
-      it "can successfully set metadata + remove" do
+      let(:cpi) { policy_cpi } # the cpi variable is used to cleanup created VMs.
 
-        #server pools cannot be dynamic, so just test one in this case.
-        #must manually specify ns_groups since they aren't added via dynamic server pools.
+      it "can successfully set metadata + remove" do
+        # server pools cannot be dynamic, so just test one in this case.
+        # must manually specify ns_groups since they aren't added via dynamic server pools.
         vm_type = {
           'ram' => 512,
           'disk' => 2048,
@@ -1102,6 +1107,7 @@ describe 'CPI', nsxt_all: true do
           verify_policy_ports([segment_1, segment_2]) do |ports|
             expect(ports.length).to eq(1)
             ports.each do |port|
+              raise StillUpdatingSegmentPorts if port.tags.length < 3
               expect(port.tags).to include(
                 an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
                 an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
@@ -1112,6 +1118,7 @@ describe 'CPI', nsxt_all: true do
 
           verify_ports(vm_id) do |logical_port|
             logical_port_ids << logical_port.id
+            raise StillUpdatingSegmentPorts if logical_port.tags.length < 3
             expect(logical_port.tags).to include(
               an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
               an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
@@ -1154,10 +1161,9 @@ describe 'CPI', nsxt_all: true do
     end
 
     context "with VMs created via the migration API" do
+      let(:cpi) { migration_cpi } # the cpi variable is used to cleanup created VMs.
 
-      let(:cpi) { migration_cpi } #the cpi variable is used to cleanup created VMs.
       it "can successfully set metadata + remove" do
-
         vm_type = {
           'ram' => 512,
           'disk' => 2048,
@@ -1214,6 +1220,7 @@ describe 'CPI', nsxt_all: true do
           verify_policy_ports([segment_1, segment_2]) do |ports|
             expect(ports.length).to eq(1)
             ports.each do |port|
+              raise StillUpdatingSegmentPorts if port.tags.length < 3
               expect(port.tags).to include(
                 an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
                 an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
@@ -1224,6 +1231,7 @@ describe 'CPI', nsxt_all: true do
 
           verify_ports(vm_id) do |logical_port|
             logical_port_ids << logical_port.id
+            raise StillUpdatingSegmentPorts if logical_port.tags.length < 3
             expect(logical_port.tags).to include(
               an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
               an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
@@ -1474,9 +1482,12 @@ describe 'CPI', nsxt_all: true do
             verify_policy_ports([segment_1, segment_2]) do |ports|
               expect(ports.length).to eq(1)
               ports.each do |port|
-                expect(port.tags).to contain_exactly(an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
-                                                     an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
-                                                     an_object_having_attributes(scope: 'bosh/test-tag-2-key', tag: 'test-tag-2-value'))
+                raise StillUpdatingSegmentPorts if port.tags.length < 3
+                expect(port.tags).to contain_exactly(
+                  an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
+                  an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
+                  an_object_having_attributes(scope: 'bosh/test-tag-2-key', tag: 'test-tag-2-value')
+                )
               end
             end
           end
@@ -1488,7 +1499,8 @@ describe 'CPI', nsxt_all: true do
           simple_vm_lifecycle(cpi, '', vm_type, network_spec) do |vm_id|
             cpi.set_vm_metadata(vm_id, 'id' => bosh_id)
             verify_ports(vm_id) do |logical_port|
-                expect(logical_port.tags).to contain_exactly( an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)) )
+              raise StillUpdatingSegmentPorts if logical_port.tags.length < 1
+              expect(logical_port.tags).to contain_exactly( an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)) )
             end
           end
         end
@@ -1820,7 +1832,7 @@ describe 'CPI', nsxt_all: true do
     @policy_load_balancer_pools_api.update_lb_pool(server_pool_id, load_balancer_pool)
   end
 
-  def retryer
+  def retryer(additional_exceptions = [])
     Bosh::Retryable.new(
       tries: 300,
       sleep: ->(try_count, retry_exception) { 1 },
@@ -1830,7 +1842,9 @@ describe 'CPI', nsxt_all: true do
         VSphereCloud::VIFNotFound,
         VSphereCloud::LogicalPortNotFound,
         SegmentPortsAreNotInitialized,
+        StillUpdatingSegmentPorts,
         StillUpdatingVMsInGroups,
+        *additional_exceptions,
       ]
     ).retryer do |i|
       yield i if block_given?

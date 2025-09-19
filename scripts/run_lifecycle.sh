@@ -1,13 +1,53 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -euo pipefail
 
 export PS4='+\e[0;33m $(printf "%-8s %s\\t%-10s" $(date +%T) "$0:${LINENO}")\e[m\n+ '
 
 # shellcheck disable=SC2154
 trap 'exit_code=$?; echo "Failed at $0:${LINENO}: $BASH_COMMAND (exit: $exit_code)"; exit $exit_code' ERR
 
+[[ ! -v DEBUG ]] || set -x
+
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+install_dependencies() {
+  if ! which genisoimage; then
+    echo 'Ensure genisoimage is installed'
+    echo 'Hint: on mac you can install mkisofs and `ln -s "$(mkisofs)" /usr/local/bin/genisoimage`'
+    exit 1
+  fi
+}
+
+update_hosts_entry() {
+  local ip="$1"
+  local hostname="$2"
+  local hosts_file="/etc/hosts"
+  
+  if [ -z "$ip" ] || [ -z "$hostname" ]; then
+    echo "Error: Both IP and hostname must be provided"
+    return 1
+  fi
+
+  sudo cp "$hosts_file" "hosts.bak.$(date +%s)"
+  
+  if grep -q "[[:space:]]${hostname}\([[:space:]]*\)$" "$hosts_file"; then
+    echo "Updating existing hosts entry for ${hostname}"
+    sudo sed -i.tmp "s/^[^#]*[[:space:]]${hostname}\([[:space:]]*\)$/${ip} ${hostname}/" "$hosts_file"
+    sudo rm -f "${hosts_file}.tmp"
+  else
+
+    echo "Adding new hosts entry: ${ip} ${hostname}"
+    echo "${ip} ${hostname}" | sudo tee -a "$hosts_file" > /dev/null
+  fi
+  
+  if grep -q "^${ip}[[:space:]]${hostname}" "$hosts_file"; then
+    echo "Successfully updated /etc/hosts with ${ip} ${hostname}"
+  else
+    echo "Warning: Failed to verify hosts entry update"
+    return 1
+  fi
+}
 
 usage() {
   local script="$(basename "${0:-${BASH_SOURCE[0]}}")"
@@ -29,13 +69,15 @@ EOF
   exit 1
 }
 
+install_dependencies
+
 lock_id="${LOCK_ID}"
 
 [ -z "${lock_id}" ] && usage
 
-lock_dir=$(mktemp -d -t lock)
+scratch_dir=$(mktemp -d -t lock)
 
-pushd "${lock_dir}"
+pushd "${scratch_dir}"
   sheepctl lock get "${lock_id}" --json > lock.json
 
   cat lock.json | jq -r '.access' > metadata
@@ -49,22 +91,14 @@ pushd "${lock_dir}"
   # The certificate's SAN contains the host name, so extract it because SSL validation fails when using the IP address
   # NOTE: Don't hard code the name as it is not guaranteed to be "nsxt-manager"
   BOSH_NSXT_CERT_HOST_NAME="$(openssl x509 -noout -text -in nsxt-manager-cert.pem | awk '/X509v3 Subject Alternative Name/ {getline;gsub(/ /, "", $0); print}' | tr -d "DNS:" | sed 's/^\*\./nsx-mgr./')"
-  # TODO this shouldn't add a new entry every time you run
-  #echo "${BOSH_VSPHERE_CPI_NSXT_HOST} ${BOSH_NSXT_CERT_HOST_NAME}" | sudo tee -a /etc/hosts
+  # Update /etc/hosts with the hostname mapping (safely handles existing entries)
+  update_hosts_entry "${BOSH_VSPHERE_CPI_NSXT_HOST}" "${BOSH_NSXT_CERT_HOST_NAME}"
   export BOSH_VSPHERE_CPI_NSXT_HOST="https://${BOSH_NSXT_CERT_HOST_NAME}"
 
   BOSH_VSPHERE_STEMCELL="$(pwd)/stemcell/stemcell.tgz"
   export BOSH_VSPHERE_STEMCELL
-
 popd
-
 
 pushd "${SCRIPT_ROOT}/../src/vsphere_cpi"
-
-bundle install
-
-
-SKIP_STEMCELL_DELETION=true bundle exec rspec --require ./spec/support/verbose_formatter.rb --format VerboseFormatter "$@"
-
+  SKIP_STEMCELL_DELETION=true bundle exec rspec --require ./spec/support/verbose_formatter.rb --format VerboseFormatter "$@"
 popd
-
