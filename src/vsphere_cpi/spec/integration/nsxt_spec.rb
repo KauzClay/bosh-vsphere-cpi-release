@@ -946,16 +946,7 @@ describe 'CPI', nsxt_all: true do
               'test-tag-2-key' => 'test-tag-2-value',
             })
 
-           sleep 30
-
-            verify_ports(vm_id) do |logical_port|
-              raise StillUpdatingSegmentPorts if logical_port.tags.length < 3
-              expect(logical_port.tags).to include(
-                  an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
-                  an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
-                  an_object_having_attributes(scope: 'bosh/test-tag-2-key', tag: 'test-tag-2-value')
-              )
-            end
+          #  sleep 30
 
             verify_policy_ports([segment_1, segment_2]) do |ports|
               expect(ports.length).to eq(1)
@@ -967,6 +958,15 @@ describe 'CPI', nsxt_all: true do
                   an_object_having_attributes(scope: 'bosh/test-tag-2-key', tag: 'test-tag-2-value')
                 )
               end
+            end
+
+            verify_ports(vm_id) do |logical_port|
+              raise StillUpdatingSegmentPorts if logical_port.tags.length < 3
+              expect(logical_port.tags).to include(
+                  an_object_having_attributes(scope: 'bosh/id', tag: Digest::SHA1.hexdigest(bosh_id)),
+                  an_object_having_attributes(scope: 'bosh/test-tag-1-key', tag: 'test-tag-1-value'),
+                  an_object_having_attributes(scope: 'bosh/test-tag-2-key', tag: 'test-tag-2-value')
+              )
             end
 
           ensure
