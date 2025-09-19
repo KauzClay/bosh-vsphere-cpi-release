@@ -19,36 +19,6 @@ install_dependencies() {
   fi
 }
 
-update_hosts_entry() {
-  local ip="$1"
-  local hostname="$2"
-  local hosts_file="/etc/hosts"
-  
-  if [ -z "$ip" ] || [ -z "$hostname" ]; then
-    echo "Error: Both IP and hostname must be provided"
-    return 1
-  fi
-
-  sudo cp "$hosts_file" "hosts.bak.$(date +%s)"
-  
-  if grep -q "[[:space:]]${hostname}\([[:space:]]*\)$" "$hosts_file"; then
-    echo "Updating existing hosts entry for ${hostname}"
-    sudo sed -i.tmp "s/^[^#]*[[:space:]]${hostname}\([[:space:]]*\)$/${ip} ${hostname}/" "$hosts_file"
-    sudo rm -f "${hosts_file}.tmp"
-  else
-
-    echo "Adding new hosts entry: ${ip} ${hostname}"
-    echo "${ip} ${hostname}" | sudo tee -a "$hosts_file" > /dev/null
-  fi
-  
-  if grep -q "^${ip}[[:space:]]${hostname}" "$hosts_file"; then
-    echo "Successfully updated /etc/hosts with ${ip} ${hostname}"
-  else
-    echo "Warning: Failed to verify hosts entry update"
-    return 1
-  fi
-}
-
 usage() {
   local script="$(basename "${0:-${BASH_SOURCE[0]}}")"
   local margin="$(printf '%*s' ${#script})"
@@ -87,12 +57,10 @@ pushd "${scratch_dir}"
   export BOSH_NSXT_CA_CERT_FILE
   BOSH_NSXT_CA_CERT_FILE="${PWD}/nsxt-manager-cert.pem"
   # To get the cert from nsxt-manager, we run openssl on the jump box, and then pipe that result into a local openssl command that reformats it into PEM
-  openssl s_client -showcerts -connect "${BOSH_VSPHERE_CPI_NSXT_HOST}":443 </dev/null 2>/dev/null | openssl x509 -outform PEM > $BOSH_NSXT_CA_CERT_FILE
+  openssl s_client -showcerts -connect "${BOSH_VSPHERE_CPI_NSXT_HOST}":443 </dev/null 2>/dev/null | openssl x509 -outform PEM > "$BOSH_NSXT_CA_CERT_FILE"
   # The certificate's SAN contains the host name, so extract it because SSL validation fails when using the IP address
   # NOTE: Don't hard code the name as it is not guaranteed to be "nsxt-manager"
   BOSH_NSXT_CERT_HOST_NAME="$(openssl x509 -noout -text -in nsxt-manager-cert.pem | awk '/X509v3 Subject Alternative Name/ {getline;gsub(/ /, "", $0); print}' | tr -d "DNS:" | sed 's/^\*\./nsx-mgr./')"
-  # Update /etc/hosts with the hostname mapping (safely handles existing entries)
-  update_hosts_entry "${BOSH_VSPHERE_CPI_NSXT_HOST}" "${BOSH_NSXT_CERT_HOST_NAME}"
   export BOSH_VSPHERE_CPI_NSXT_HOST="https://${BOSH_NSXT_CERT_HOST_NAME}"
 
   BOSH_VSPHERE_STEMCELL="$(pwd)/stemcell/stemcell.tgz"
