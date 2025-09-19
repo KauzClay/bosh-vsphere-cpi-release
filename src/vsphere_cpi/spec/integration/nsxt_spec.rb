@@ -946,6 +946,8 @@ describe 'CPI', nsxt_all: true do
               'test-tag-2-key' => 'test-tag-2-value',
             })
 
+           sleep 30
+
             verify_ports(vm_id) do |logical_port|
               raise StillUpdatingSegmentPorts if logical_port.tags.length < 3
               expect(logical_port.tags).to include(
